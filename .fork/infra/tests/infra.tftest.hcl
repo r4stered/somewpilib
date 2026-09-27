@@ -45,6 +45,14 @@ run "bucket_has_30_day_expiry_on_both_cache_prefixes" {
     ])
     error_message = "Managing lifecycle replaces R2's default multipart-abort rule, so it must be restated."
   }
+
+  assert {
+    condition = (
+      tolist([for r in cloudflare_r2_bucket_lifecycle.ci.rules : r.id])
+      == sort([for r in cloudflare_r2_bucket_lifecycle.ci.rules : r.id])
+    )
+    error_message = "R2 returns lifecycle rules sorted by id; any other order is a perpetual diff."
+  }
 }
 
 run "repo_gets_ci_secrets_and_variables" {

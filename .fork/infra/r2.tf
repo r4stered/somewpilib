@@ -3,8 +3,9 @@ locals {
   r2_endpoint = "https://${var.cloudflare_account_id}.r2.cloudflarestorage.com"
 
   # CI rewrites these prefixes from main only; stale objects age out instead of
-  # being evicted.
-  cache_prefixes        = ["sccache/", "deps/"]
+  # being evicted. Keep them sorted: R2 returns lifecycle rules ordered by id,
+  # and any other order shows up as a diff on every plan.
+  cache_prefixes        = ["deps/", "sccache/"]
   cache_max_age_seconds = 30 * 24 * 60 * 60
 }
 
