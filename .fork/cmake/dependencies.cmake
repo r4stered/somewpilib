@@ -30,3 +30,5 @@ cmake_language(
     SET_DEPENDENCY_PROVIDER wpilib_provide_dependency
     SUPPORTED_METHODS FIND_PACKAGE
 )
+
+include("${CMAKE_CURRENT_LIST_DIR}/compile-workarounds.cmake")
