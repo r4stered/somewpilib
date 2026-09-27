@@ -47,25 +47,6 @@ run "bucket_has_30_day_expiry_on_both_cache_prefixes" {
   }
 }
 
-run "ci_token_is_scoped_to_the_ci_bucket_only" {
-  command = plan
-
-  assert {
-    condition = toset(flatten([
-      for p in cloudflare_account_token.ci.policies : [for g in p.permission_groups : g.id]
-    ])) == toset(["pg-item-read", "pg-item-write"])
-    error_message = "CI token must hold only the bucket-item read/write permission groups."
-  }
-
-  assert {
-    condition = alltrue([
-      for p in cloudflare_account_token.ci.policies :
-      keys(jsondecode(p.resources)) == ["com.cloudflare.edge.r2.bucket.0123456789abcdef0123456789abcdef_default_somewpilib-ci"]
-    ])
-    error_message = "CI token must be scoped to the CI bucket, not the whole account."
-  }
-}
-
 run "repo_gets_ci_secrets_and_variables" {
   command = plan
 

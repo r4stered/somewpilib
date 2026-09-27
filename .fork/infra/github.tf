@@ -1,7 +1,7 @@
 locals {
   ci_secrets = {
-    R2_ACCESS_KEY_ID     = cloudflare_account_token.ci.id
-    R2_SECRET_ACCESS_KEY = sha256(cloudflare_account_token.ci.value)
+    R2_ACCESS_KEY_ID     = module.ci_token.access_key_id
+    R2_SECRET_ACCESS_KEY = module.ci_token.secret_access_key
     ANTHROPIC_API_KEY    = var.anthropic_api_key
   }
 

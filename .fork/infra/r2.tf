@@ -39,35 +39,11 @@ resource "cloudflare_r2_bucket_lifecycle" "ci" {
   )
 }
 
-data "cloudflare_account_api_token_permission_groups_list" "all" {
-  account_id = var.cloudflare_account_id
-}
+# CI's S3 credentials.
+module "ci_token" {
+  source = "./modules/r2-bucket-token"
 
-locals {
-  r2_item_permission_groups = [
-    for g in data.cloudflare_account_api_token_permission_groups_list.all.result : g.id
-    if contains(["Workers R2 Storage Bucket Item Read", "Workers R2 Storage Bucket Item Write"], g.name)
-  ]
-}
-
-# CI's S3 credentials. R2 derives them from an API token: the access key ID is
-# the token ID and the secret access key is the SHA-256 of the token value.
-resource "cloudflare_account_token" "ci" {
-  account_id = var.cloudflare_account_id
-  name       = "${var.github_repository} CI (${local.ci_bucket})"
-
-  policies = [{
-    effect            = "allow"
-    permission_groups = [for id in local.r2_item_permission_groups : { id = id }]
-    resources = jsonencode({
-      "com.cloudflare.edge.r2.bucket.${var.cloudflare_account_id}_default_${local.ci_bucket}" = "*"
-    })
-  }]
-
-  lifecycle {
-    precondition {
-      condition     = length(local.r2_item_permission_groups) == 2
-      error_message = "Could not find both R2 bucket-item permission groups; Cloudflare may have renamed them."
-    }
-  }
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.ci.name
+  token_name  = "${var.github_repository} CI (${local.ci_bucket})"
 }
