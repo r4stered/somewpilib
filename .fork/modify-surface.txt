@@ -1,0 +1,9 @@
+# The fork's entire modify surface: every edit it makes to a carried file.
+#
+# `sync.py check` fails unless the working tree's edits to carried files,
+# relative to upstream, are exactly these. One entry per line:
+#   <path> +<added line>
+#   <path> -<removed line>
+#
+# The provider switch-on, before project() in the top-level CMakeLists.txt (#5).
+CMakeLists.txt +list(APPEND CMAKE_PROJECT_TOP_LEVEL_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/.fork/cmake/dependencies.cmake")
