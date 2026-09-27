@@ -1,4 +1,0 @@
-classes:
-  wpi::Spark:
-    methods:
-      Spark:

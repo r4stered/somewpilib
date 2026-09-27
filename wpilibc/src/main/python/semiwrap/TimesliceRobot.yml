@@ -1,5 +1,0 @@
-classes:
-  wpi::TimesliceRobot:
-    methods:
-      TimesliceRobot:
-      Schedule:

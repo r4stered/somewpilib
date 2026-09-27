@@ -1,7 +1,0 @@
-classes:
-  wpi::math::DifferentialDriveOdometry:
-    force_no_trampoline: true
-    methods:
-      DifferentialDriveOdometry:
-      ResetPosition:
-      Update:

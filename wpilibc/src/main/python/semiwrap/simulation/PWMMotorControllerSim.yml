@@ -1,8 +1,0 @@
-classes:
-  wpi::sim::PWMMotorControllerSim:
-    methods:
-      PWMMotorControllerSim:
-        overloads:
-          const PWMMotorController&:
-          int:
-      GetThrottle:
