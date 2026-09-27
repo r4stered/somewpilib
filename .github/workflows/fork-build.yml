@@ -15,12 +15,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # GCC 14 rather than the image's default gcc (13): wpiutil includes
-          # <print>, which libstdc++ only has from 14. Both are preinstalled.
+          # Each row pins its image and that image's preinstalled default
+          # compiler major. Bump the image and the majors together, in one
+          # deliberate change (#55).
           - name: Linux x64 GCC
-            os: ubuntu-24.04
-            cc: gcc-14
-            cxx: g++-14
+            os: ubuntu-26.04
+            cc: gcc-15
+            cxx: g++-15
             build-type: Release
             # Upstream's ctest exclusions, carried as-is:
             #   CameraCalibrationTest Typical  inexplicably crashes (Linux, macOS)

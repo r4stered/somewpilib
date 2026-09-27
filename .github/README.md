@@ -7,7 +7,7 @@ The fork tracks upstream's `main` through a weekly sync. It removes whatever it 
 ## Requirements
 
 - CMake 4.4 or newer. Upstream's `cmake_minimum_required` is lower, but the fork's dependency provider enforces 4.4.
-- A C++23 compiler: GCC 14 or newer, Clang, AppleClang or MSVC.
+- A C++23 compiler: GCC 14 or newer, Clang 19 or newer, AppleClang or MSVC. GCC 14 is the first with `<print>`, and Clang 19 is the first that libstdc++ offers `<expected>` to. CI builds with newer compilers (GCC 15 and Clang 21 on Linux), so these minimums aren't tested.
 - Network access at configure time.
 
 ## Building
