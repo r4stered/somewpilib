@@ -39,6 +39,7 @@ endif()
 
 cmake_minimum_required(VERSION 3.21)
 
+list(APPEND CMAKE_PROJECT_TOP_LEVEL_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/.fork/cmake/dependencies.cmake")
 project(allwpilib)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
