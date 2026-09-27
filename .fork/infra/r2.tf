@@ -4,8 +4,8 @@ locals {
 
   # CI rewrites these prefixes from main only; stale objects age out instead of
   # being evicted.
-  cache_prefixes = ["sccache/", "deps/"]
-  cache_max_age  = 30 * 24 * 60 * 60
+  cache_prefixes        = ["sccache/", "deps/"]
+  cache_max_age_seconds = 30 * 24 * 60 * 60
 }
 
 resource "cloudflare_r2_bucket" "ci" {
@@ -33,7 +33,7 @@ resource "cloudflare_r2_bucket_lifecycle" "ci" {
       enabled    = true
       conditions = { prefix = prefix }
       delete_objects_transition = {
-        condition = { type = "Age", max_age = local.cache_max_age }
+        condition = { type = "Age", max_age = local.cache_max_age_seconds }
       }
     }],
   )

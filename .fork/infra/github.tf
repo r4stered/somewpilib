@@ -45,10 +45,12 @@ resource "github_actions_repository_permissions" "repo" {
 resource "terraform_data" "disable_upstream_schedules" {
   input = local.upstream_scheduled_workflows
 
+  # Retries cover the short window where GitHub hasn't registered the
+  # workflows yet after Actions is enabled.
   provisioner "local-exec" {
     command = join(" && ", [
-      for wf in local.upstream_scheduled_workflows :
-      "gh workflow disable ${wf} --repo ${var.github_owner}/${var.github_repository}"
+      for wf in self.input :
+      "for i in 1 2 3 4 5; do gh workflow disable ${wf} --repo ${var.github_owner}/${var.github_repository} && break; [ $i = 5 ] && exit 1; sleep 5; done"
     ])
   }
 

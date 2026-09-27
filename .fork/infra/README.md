@@ -42,6 +42,8 @@ export TF_VAR_anthropic_api_key="<key>"
 
 ## Apply
 
+> **Once this is applied, don't push any branch that still carries upstream's workflows.** Once Actions is on, `bazel.yml`, `cmake.yml`, `gradle.yml` and the others run on every push to any branch. `birth` is safe to push only after commit 2 (the prune) has deleted them.
+
 ```bash
 tofu init
 tofu plan -out=step0.tfplan
