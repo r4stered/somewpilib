@@ -1,0 +1,64 @@
+name: Fork build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # GCC 14 rather than the image's default gcc (13): wpiutil includes
+          # <print>, which libstdc++ only has from 14. Both are preinstalled.
+          - name: Linux x64 GCC
+            os: ubuntu-24.04
+            cc: gcc-14
+            cxx: g++-14
+            build-type: Release
+            # Upstream's ctest exclusions, carried as-is:
+            #   CameraCalibrationTest Typical  inexplicably crashes (Linux, macOS)
+            #   UnitTest                        segfaults on exit occasionally (Windows)
+            ctest-exclude: "CameraCalibrationTest Typical"
+
+    name: "Build - ${{ matrix.name }} ${{ matrix.build-type }}"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Tags are needed for version stamping.
+          fetch-depth: 0
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: .fork/ci/install-linux-deps.sh
+
+      - name: Start avahi-daemon (Linux)
+        if: runner.os == 'Linux'
+        run: sudo systemctl start avahi-daemon
+
+      - name: Install CMake
+        uses: lukka/get-cmake@v4.4.0
+        with:
+          cmakeVersion: latest
+
+      - name: Configure
+        run: >-
+          cmake --preset default
+          -DCMAKE_BUILD_TYPE=${{ matrix.build-type }}
+          -DCMAKE_C_COMPILER=${{ matrix.cc }}
+          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          -DWPILIB_WITH_EXAMPLES=ON
+          -DWPILIB_WITH_TESTS=ON
+
+      - name: Build
+        run: cmake --build build-cmake --parallel
+
+      - name: Test
+        run: ctest --test-dir build-cmake --output-on-failure -E '${{ matrix.ctest-exclude }}'
