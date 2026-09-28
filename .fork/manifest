@@ -43,7 +43,6 @@
 !wpinet/src/main/native/thirdparty/llhttp/
 !wpiutil/src/main/native/thirdparty/argparse/
 !wpiutil/src/main/native/thirdparty/debugging/
-!wpiutil/src/main/native/thirdparty/double-conversion/
 !wpiutil/src/main/native/thirdparty/htrie/
 !wpiutil/src/main/native/thirdparty/mpack/
 !wpiutil/src/main/native/thirdparty/nanopb/

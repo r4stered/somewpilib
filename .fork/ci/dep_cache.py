@@ -32,6 +32,8 @@ KEY_VERSION = "1"
 # and the fork's patches. A recipe or pin file outside these must be added here.
 KEY_INPUTS = (
     ".fork/cmake/dependencies.cmake",
+    ".fork/cmake/stock.cmake",
+    ".fork/cmake/stock-fetch.cmake",
     ".fork/cmake/deps/**/*",
     ".fork/pin*",
     ".fork/patches/**/*",

@@ -125,6 +125,14 @@ class CacheKeyTest(unittest.TestCase):
         self.tree.write(".fork/pins.cmake", "set(libuv v1.50.0)")
         self.assertNotEqual(patched, self.key())
 
+    def test_changes_with_the_stock_mechanism(self):
+        before = self.key()
+        self.tree.write(".fork/cmake/stock.cmake", "mechanism v2")
+        mechanism = self.key()
+        self.assertNotEqual(before, mechanism)
+        self.tree.write(".fork/cmake/stock-fetch.cmake", "fetch v2")
+        self.assertNotEqual(mechanism, self.key())
+
     def test_changes_with_a_new_recipe_file(self):
         before = self.key()
         self.tree.write(".fork/cmake/deps/opencv.cmake", "recipe")

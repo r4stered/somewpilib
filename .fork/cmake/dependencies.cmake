@@ -6,8 +6,9 @@
 # fork's one-line modify surface). A consumer using the subdirectory route sets
 # it themselves, since their project() runs before WPILib's CMakeLists.txt does.
 #
-# For now it provides nothing: every find_package falls through to CMake's
-# built-in search. Recipes land here one dependency at a time.
+# For now it answers no find_package call: each falls through to CMake's
+# built-in search. The stock libraries upstream used to vendor are wired in by
+# the recipes in deps/ instead (stock.cmake, README.md).
 
 include_guard(GLOBAL)
 
@@ -43,3 +44,12 @@ cmake_language(
 
 include("${CMAKE_CURRENT_LIST_DIR}/compile-workarounds.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/version.cmake")
+
+# Stock libraries (#12). No carried file calls find_package for these, so the
+# provider doesn't answer them: each recipe defers its own wiring until
+# upstream's targets exist.
+include("${CMAKE_CURRENT_LIST_DIR}/stock.cmake")
+file(GLOB _wpilib_recipes "${CMAKE_CURRENT_LIST_DIR}/deps/*.cmake")
+foreach(_wpilib_recipe IN LISTS _wpilib_recipes)
+    include("${_wpilib_recipe}")
+endforeach()

@@ -130,3 +130,24 @@ jobs:
 
       - name: Check the package version file
         run: grep 'set(PACKAGE_VERSION "[1-9]' install/share/wpilib/wpilib-config-version.cmake
+
+      - name: Check the installed configs find the stock libraries
+        run: |
+          # Configure only: wpiutil's config must import the stock libraries
+          # from the install prefix itself (#32). #42 builds a real consumer.
+          mkdir -p "$RUNNER_TEMP/probe"
+          cat > "$RUNNER_TEMP/probe/CMakeLists.txt" <<'EOF'
+          cmake_minimum_required(VERSION 4.4)
+          project(probe CXX)
+          find_package(wpiutil REQUIRED)
+          if(NOT TARGET double-conversion::double-conversion)
+              message(FATAL_ERROR "wpiutil's config didn't import double-conversion")
+          endif()
+          cmake_path(IS_PREFIX CMAKE_PREFIX_PATH "${double-conversion_DIR}" in_prefix)
+          if(NOT in_prefix)
+              message(FATAL_ERROR "double-conversion came from ${double-conversion_DIR}")
+          endif()
+          EOF
+          cmake -S "$RUNNER_TEMP/probe" -B "$RUNNER_TEMP/probe/build" \
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+            -DCMAKE_PREFIX_PATH="$PWD/install"
