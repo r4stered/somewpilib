@@ -30,6 +30,28 @@ jobs:
 
     name: "Build - ${{ matrix.name }} ${{ matrix.build-type }}"
     runs-on: ${{ matrix.os }}
+    env:
+      # Any WPILIB_DEP_* argument here also keys the dep cache.
+      CONFIGURE_ARGS: >-
+        -DCMAKE_BUILD_TYPE=${{ matrix.build-type }}
+        -DCMAKE_C_COMPILER=${{ matrix.cc }}
+        -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+        -DWPILIB_WITH_EXAMPLES=ON
+        -DWPILIB_WITH_TESTS=ON
+      # The R2 cache (.fork/ci/README.md). Only main pushes write; everything
+      # else reads. Without the secret (PRs from forks of the fork), sccache and
+      # the dep cache are skipped and the build runs uncached.
+      CACHE_WRITE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      SCCACHE_BUCKET: ${{ vars.R2_BUCKET }}
+      SCCACHE_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+      SCCACHE_REGION: auto
+      SCCACHE_S3_KEY_PREFIX: sccache/
+      SCCACHE_S3_RW_MODE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'READ_WRITE' || 'READ_ONLY' }}
+      # An unreachable bucket falls back to plain compiles instead of failing.
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -49,17 +71,45 @@ jobs:
         with:
           cmakeVersion: latest
 
+      - name: Install sccache
+        if: env.R2_ACCESS_KEY_ID != ''
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Use sccache as the compiler launcher
+        if: env.R2_ACCESS_KEY_ID != ''
+        run: |
+          echo "CMAKE_C_COMPILER_LAUNCHER=sccache" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=sccache" >> "$GITHUB_ENV"
+
+      - name: Restore the dep cache
+        uses: ./.fork/ci/dep-cache
+        with:
+          mode: restore
+          compiler: ${{ matrix.cc }}
+          configure-args: ${{ env.CONFIGURE_ARGS }}
+          bucket: ${{ vars.R2_BUCKET }}
+          endpoint: ${{ vars.R2_ENDPOINT }}
+          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
       - name: Configure
-        run: >-
-          cmake --preset default
-          -DCMAKE_BUILD_TYPE=${{ matrix.build-type }}
-          -DCMAKE_C_COMPILER=${{ matrix.cc }}
-          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
-          -DWPILIB_WITH_EXAMPLES=ON
-          -DWPILIB_WITH_TESTS=ON
+        shell: bash
+        run: cmake --preset default $CONFIGURE_ARGS
 
       - name: Build
         run: cmake --build build-cmake --parallel
+
+      - name: Save the dep cache
+        uses: ./.fork/ci/dep-cache
+        with:
+          mode: save
+          compiler: ${{ matrix.cc }}
+          configure-args: ${{ env.CONFIGURE_ARGS }}
+          write: ${{ env.CACHE_WRITE }}
+          bucket: ${{ vars.R2_BUCKET }}
+          endpoint: ${{ vars.R2_ENDPOINT }}
+          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
 
       - name: Check the version stamp
         run: |

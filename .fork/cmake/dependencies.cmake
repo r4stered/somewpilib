@@ -20,6 +20,16 @@ if(CMAKE_VERSION VERSION_LESS 4.4)
     )
 endif()
 
+# Where recipes keep what they fetch and install: sources under download/<dep>
+# and install prefixes under prefix/<dep>. CI caches exactly those two subdirs
+# (.fork/ci/dep-cache/), so a recipe must reuse a populated one rather than
+# fetch or rebuild it, and must keep build trees elsewhere (such as build/).
+set(WPILIB_DEPS_DIR
+    "${CMAKE_BINARY_DIR}/_wpilib_deps"
+    CACHE PATH
+    "Where the dependency provider fetches, builds and installs dependencies."
+)
+
 # A macro rather than a function, so recipes can set result variables (such as
 # OpenCV_INCLUDE_DIRS) in the scope of the find_package call.
 macro(wpilib_provide_dependency method package_name)
