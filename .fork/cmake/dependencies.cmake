@@ -32,3 +32,4 @@ cmake_language(
 )
 
 include("${CMAKE_CURRENT_LIST_DIR}/compile-workarounds.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/version.cmake")
