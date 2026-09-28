@@ -1,7 +1,9 @@
 """Tests for .fork/ci/dep_cache.py. Run with: python3 -m unittest discover -s .fork/tests"""
 
+import io
 import pathlib
 import sys
+import tarfile
 import tempfile
 import unittest
 
@@ -50,7 +52,7 @@ class TempTree:
 class DepArgsTest(unittest.TestCase):
     def test_keeps_only_wpilib_dep_definitions(self):
         args = dep_cache.dep_args(
-            "-DWPILIB_DEP_OPENCV_CMAKE_ARGS=-DWITH_X=ON -DCMAKE_BUILD_TYPE=Release"
+            "-DWPILIB_DEP_OPENCV_CMAKE_ARGS=-DWITH_X=ON -DCMAKE_C_COMPILER=gcc-15"
             " -DWPILIB_DEPS_DIR=/tmp/x -DWPILIB_WITH_TESTS=ON"
         )
         self.assertEqual(args, ["WPILIB_DEP_OPENCV_CMAKE_ARGS=-DWITH_X=ON"])
@@ -61,10 +63,26 @@ class DepArgsTest(unittest.TestCase):
             dep_cache.dep_args("-DWPILIB_DEP_A=2 -DWPILIB_DEP_B=1"),
         )
 
-    def test_accepts_a_space_after_d_and_shell_quoting(self):
+    def test_accepts_a_space_after_d(self):
         self.assertEqual(
-            dep_cache.dep_args("-D 'WPILIB_DEP_X_CMAKE_ARGS=-DA=1;-DB=2'"),
+            dep_cache.dep_args("-D WPILIB_DEP_X_CMAKE_ARGS=-DA=1;-DB=2"),
             ["WPILIB_DEP_X_CMAKE_ARGS=-DA=1;-DB=2"],
+        )
+
+    def test_keeps_the_build_type(self):
+        self.assertEqual(
+            dep_cache.dep_args("-DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=cl"),
+            ["CMAKE_BUILD_TYPE=Debug"],
+        )
+
+    def test_splits_words_like_the_unquoted_shell_expansion_does(self):
+        # The workflow expands CONFIGURE_ARGS unquoted, so bash splits on
+        # whitespace and keeps quote characters; the key must see the same.
+        self.assertEqual(
+            dep_cache.dep_args("-D'WPILIB_DEP_X=a'"), []
+        )
+        self.assertEqual(
+            dep_cache.dep_args("-DWPILIB_DEP_X='a'"), ["WPILIB_DEP_X='a'"]
         )
 
 
@@ -112,10 +130,11 @@ class CacheKeyTest(unittest.TestCase):
         self.tree.write(".fork/cmake/deps/opencv.cmake", "recipe")
         self.assertNotEqual(before, self.key())
 
-    def test_changes_with_wpilib_dep_args_only(self):
+    def test_changes_with_wpilib_dep_args_and_build_type_only(self):
         before = self.key()
         self.assertEqual(before, self.key("-DWPILIB_WITH_GUI=ON"))
         self.assertNotEqual(before, self.key("-DWPILIB_DEP_LIBUV_GIT_TAG=v1.49.0"))
+        self.assertNotEqual(before, self.key("-DCMAKE_BUILD_TYPE=Debug"))
 
     def test_ignores_files_that_do_not_build_deps(self):
         before = self.key()
@@ -202,18 +221,24 @@ class RestoreSaveTest(unittest.TestCase):
             dep_cache.restore(FakeStore(fail=True), "k", self.deps.root)
 
     def test_restore_rejects_members_outside_the_deps_dir(self):
-        import io
-        import tarfile
-
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-            info = tarfile.TarInfo("../escape.txt")
-            info.size = 1
-            tar.addfile(info, io.BytesIO(b"x"))
+            for name in ("prefix/ok.txt", "../escape.txt"):
+                info = tarfile.TarInfo(name)
+                info.size = 1
+                tar.addfile(info, io.BytesIO(b"x"))
         store = FakeStore({"deps/k.tar.gz": buf.getvalue()})
-        with self.assertRaises(Exception):
+        with self.assertRaises(dep_cache.StoreError):
             dep_cache.restore(store, "k", self.deps.root)
         self.assertFalse((self.deps.root.parent / "escape.txt").exists())
+        # A half-finished extract is removed, so recipes never see it.
+        self.assertFalse((self.deps.root / "prefix").exists())
+
+    def test_a_corrupt_tarball_is_a_store_error_and_leaves_nothing(self):
+        store = FakeStore({"deps/k.tar.gz": b"not a tarball"})
+        with self.assertRaises(dep_cache.StoreError):
+            dep_cache.restore(store, "k", self.deps.root)
+        self.assertEqual(list(self.deps.root.iterdir()), [])
 
 
 if __name__ == "__main__":

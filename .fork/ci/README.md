@@ -30,20 +30,22 @@ R2 has no regions, so sccache uses `SCCACHE_REGION=auto` and `dep_cache.py` sets
 - **Everything else only reads.** On a PR, sccache runs `READ_ONLY`, and `dep-cache` save does nothing. A PR miss builds from source and uploads nothing, so a PR can never poison the cache that `main` reads.
 - **No secret, no cache.** A PR from a fork of the fork gets no secrets. The workflow then doesn't install sccache or set the compiler launcher, and both `dep-cache` steps log a notice and do nothing. The build passes, just slower.
 
-Cache trouble never fails a build. sccache runs with `SCCACHE_IGNORE_SERVER_IO_ERROR=1`, so it compiles locally when the bucket can't be reached. `dep_cache.py` turns any store error into a warning and a miss.
+Cache trouble never fails a build. sccache runs with `SCCACHE_IGNORE_SERVER_IO_ERROR=1`, so it compiles locally when the bucket can't be reached. `dep_cache.py` turns any store error, or a tarball it can't unpack, into a warning and a miss, and deletes a partial extract first.
+
+Read-only is enforced by the job's settings, not by the token. The one R2 token can write, and a same-repo PR gets it. That's safe because anyone who can push a same-repo branch can already edit the workflow. PRs from forks of the fork get no secret at all.
 
 ### The dep-cache key
 
 ```
 deps/<os>-<arch>-<compiler>-<hash>.tar.gz
-e.g. deps/linux-x64-gcc-15-1caee43824f618eb.tar.gz
+e.g. deps/linux-x64-gcc-15-900909bf2b755d24.tar.gz
 ```
 
 - `<os>` and `<arch>` are the runner's `runner.os` and `runner.arch`, lowercased.
 - `<compiler>` is the row's C compiler (`matrix.cc`, e.g. `gcc-15`). Rows pin the compiler major, so a major bump is a new key.
 - `<hash>` is the first 16 hex digits of a SHA-256 over:
-  - every file matching `KEY_INPUTS` in `dep_cache.py`, i.e. the provider and its recipes, the pins (upstream's `upstream_utils/*.py` tag lines and the fork's pin table) and `.fork/patches/`, by path and content;
-  - the `WPILIB_DEP_*` definitions in the row's `CONFIGURE_ARGS`, sorted. Other arguments don't affect what the provider builds, so they don't enter the key;
+  - every file matching `KEY_INPUTS` in `dep_cache.py`, by path and whole content. These are the provider and its recipes, the pins (every `upstream_utils/*.py`, where upstream's tag lines live, and the fork's pin table) and `.fork/patches/`. So any edit to one of them, even a comment, makes a new key;
+  - the `WPILIB_DEP_*` and `CMAKE_BUILD_TYPE` definitions in the row's `CONFIGURE_ARGS`, sorted. The build type is there because an MSVC Debug build links a different runtime. Other arguments don't affect what the provider builds, so they don't enter the key. A row whose deps differ some other way, such as a sanitizer row that instruments them, must put the difference in a `WPILIB_DEP_*` argument;
   - `KEY_VERSION`, which you bump to invalidate every key.
 
 **When you add a recipe or pin file outside those globs, add it to `KEY_INPUTS`.** Otherwise a change to it will restore a stale prefix.

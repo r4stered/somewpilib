@@ -31,7 +31,8 @@ jobs:
     name: "Build - ${{ matrix.name }} ${{ matrix.build-type }}"
     runs-on: ${{ matrix.os }}
     env:
-      # Any WPILIB_DEP_* argument here also keys the dep cache.
+      # Expanded unquoted in bash, so no quoting. Any WPILIB_DEP_* argument and
+      # the build type here also key the dep cache.
       CONFIGURE_ARGS: >-
         -DCMAKE_BUILD_TYPE=${{ matrix.build-type }}
         -DCMAKE_C_COMPILER=${{ matrix.cc }}

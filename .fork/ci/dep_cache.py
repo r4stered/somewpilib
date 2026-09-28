@@ -4,8 +4,8 @@
 The provider puts everything it fetches under WPILIB_DEPS_DIR/download/ and
 everything it installs under WPILIB_DEPS_DIR/prefix/. One tarball of both is
 stored per key, at deps/<os>-<arch>-<compiler>-<hash>.tar.gz. The hash covers
-every file that decides what the provider builds (KEY_INPUTS) and the
-WPILIB_DEP_* configure arguments, so a key is never rewritten: a change makes
+every file that decides what the provider builds (KEY_INPUTS), the
+WPILIB_DEP_* configure arguments and the build type, so a key is never rewritten: a change makes
 a new key, and the bucket's lifecycle rule ages out the old one.
 
 The restore and save steps of .fork/ci/dep-cache/ run this. Cache trouble is
@@ -17,7 +17,7 @@ import hashlib
 import os
 import pathlib
 import re
-import shlex
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -48,16 +48,25 @@ class StoreError(Exception):
     pass
 
 
+# Configure definitions that change what the provider builds. The build type is
+# one: an MSVC Debug build links a different runtime.
+KEY_DEFINITIONS = ("WPILIB_DEP_", "CMAKE_BUILD_TYPE=", "CMAKE_BUILD_TYPE:")
+
+
 def dep_args(configure_args):
-    """The WPILIB_DEP_* definitions in a configure command line, sorted."""
-    tokens = shlex.split(configure_args)
+    """The definitions in a configure command line that enter the key, sorted.
+
+    The workflow expands the arguments unquoted, so they are split the way
+    bash does it: on whitespace, with any quote characters kept.
+    """
+    tokens = configure_args.split()
     defs = []
     for i, token in enumerate(tokens):
         if token == "-D" and i + 1 < len(tokens):
             defs.append(tokens[i + 1])
         elif token.startswith("-D") and len(token) > 2:
             defs.append(token[2:])
-    return sorted(d for d in defs if d.startswith("WPILIB_DEP_"))
+    return sorted(d for d in defs if d.startswith(KEY_DEFINITIONS))
 
 
 def _input_files(root):
@@ -98,10 +107,16 @@ def restore(store, key, deps_dir):
     with tempfile.TemporaryDirectory() as tmp:
         archive = pathlib.Path(tmp) / "deps.tar.gz"
         store.download(name, archive)
-        with tarfile.open(archive, "r:gz") as tar:
-            # The data filter refuses absolute paths, "..", and links that
-            # point out of deps_dir.
-            tar.extractall(deps_dir, filter="data")
+        try:
+            with tarfile.open(archive, "r:gz") as tar:
+                # The data filter refuses absolute paths, "..", and links that
+                # point out of deps_dir.
+                tar.extractall(deps_dir, filter="data")
+        except (tarfile.TarError, OSError) as e:
+            # Recipes reuse whatever they find, so a partial extract must go.
+            for d in CACHED_DIRS:
+                shutil.rmtree(deps_dir / d, ignore_errors=True)
+            raise StoreError(f"unusable tarball {name}: {e}") from e
     return True
 
 
@@ -121,9 +136,12 @@ def save(store, key, deps_dir, write):
         return "empty"
     with tempfile.TemporaryDirectory() as tmp:
         archive = pathlib.Path(tmp) / "deps.tar.gz"
-        with tarfile.open(archive, "w:gz") as tar:
-            for d in present:
-                tar.add(deps_dir / d, arcname=d)
+        try:
+            with tarfile.open(archive, "w:gz") as tar:
+                for d in present:
+                    tar.add(deps_dir / d, arcname=d)
+        except OSError as e:
+            raise StoreError(f"could not pack {deps_dir}: {e}") from e
         store.upload(archive, name)
     return "uploaded"
 
