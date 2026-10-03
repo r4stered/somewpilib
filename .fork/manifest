@@ -1,0 +1,182 @@
+# The removal manifest: every path the fork doesn't carry.
+#
+# gitignore syntax, read by .fork/sync.py, with one difference: a negation can
+# re-include a file under a directory an earlier pattern removed. The last
+# pattern that matches a path decides.
+#
+# The rationale lives in the tracker: removal inventory (#2), Java/JNI (#3),
+# codegen (#4), vendored libraries (#12), SystemCore (#13) and the Iota HAL
+# backend seam (iota-robot map). The repo-wide cleanup patterns come last so
+# they also apply inside every directory re-included above them.
+
+# --- Vendored third-party libraries (#12) ------------------------------------
+# Vendor nothing: every vendored library is fetched stock by the provider.
+
+**/thirdparty/*/
+
+# Carried libraries: WPILib-owned code, kept as upstream has it.
+!wpiutil/src/main/native/thirdparty/llvm/
+!wpiutil/src/main/native/thirdparty/json/
+!wpiutil/src/main/native/thirdparty/sigslot/
+!wpinet/src/main/native/thirdparty/tcpsockets/
+!glass/src/lib/native/thirdparty/mrccomm/
+
+# The imgui_suite fonts are committed generator output (#4, #12).
+!thirdparty/imgui_suite/generate_fonts.sh
+!thirdparty/imgui_suite/generated/
+
+# TEMPORARY: vendored libraries that don't have a provider recipe yet. Each
+# stock-library ticket deletes its own line here, and birth isn't done until
+# this block is empty.
+!apriltag/src/main/native/thirdparty/apriltag/
+!benchmark/src/main/native/thirdparty/benchmark/
+!thirdparty/catch2/
+!thirdparty/imgui_suite/
+!tools/wpical/src/main/native/thirdparty/libdogleg/
+!tools/wpical/src/main/native/thirdparty/mrcal/
+!tools/wpical/src/main/native/thirdparty/mrcal_java/
+!wpimath/src/main/native/thirdparty/eigen/
+!wpimath/src/main/native/thirdparty/gcem/
+!wpimath/src/main/native/thirdparty/sleipnir/
+!wpinet/src/main/native/thirdparty/ada/
+!wpinet/src/main/native/thirdparty/libuv/
+!wpinet/src/main/native/thirdparty/llhttp/
+!wpiutil/src/main/native/thirdparty/argparse/
+!wpiutil/src/main/native/thirdparty/debugging/
+!wpiutil/src/main/native/thirdparty/htrie/
+!wpiutil/src/main/native/thirdparty/mpack/
+!wpiutil/src/main/native/thirdparty/nanopb/
+!wpiutil/src/main/native/thirdparty/upb/
+# END TEMPORARY
+
+# upstream_utils/*.py stay as the pin source; their patches never apply.
+/upstream_utils/*_patches/
+
+# --- Top-level entries (#2) --------------------------------------------------
+
+# Java-only and Gradle-only modules.
+/allwpilib-java/
+/commandsv3/
+/epilogue-processor/
+/epilogue-runtime/
+/fieldImages/
+/javacPlugin/
+/msvcruntime/
+/wpiannotations/
+/wpilibNewCommands/
+/wpilibjExamples/
+/wpiunits/
+/styleguide/
+
+# wpilibj goes, except the HID JSON the C++ HID generators read (#4).
+/wpilibj/
+!/wpilibj/src/generate/*.json
+
+# C++ that only Bazel and Gradle build.
+/aosnt/
+/ntcoreffi/
+
+# RobotPy.
+/robotpyExamples/
+/README-RobotPy.md
+
+# Bazel and Maven publishing docs, Copybara, lock files, unused configs.
+/README-Bazel.md
+/MavenArtifacts.md
+/DevelopmentBuilds.md
+/copy.bara.sky
+/requirements_lock.txt
+/requirements_windows_lock.txt
+/tidy-html.conf
+/tidy-xml.conf
+/.wpilib/
+/design-docs/commands-v3*.md
+
+# No package managers (#5): the provider builds external deps from source.
+/vcpkg.json
+
+# shared/ keeps only the generation module the codegen scripts import.
+/shared/*
+!/shared/generation.py
+
+# docs/ keeps only the stylesheet AddDoxygenDocs.cmake reads.
+/docs/*
+!/docs/theme.css
+
+# --- .github (#1) ------------------------------------------------------------
+# All of upstream's .github goes. The fork's files use names upstream doesn't.
+
+/.github/
+!/.github/workflows/fork-*.yml
+!/.github/README.md
+!/.github/CONTRIBUTING.md
+
+# --- Subtrees inside kept modules (#2, #4) -----------------------------------
+
+# Gradle-only dev executables. CMake builds these three.
+**/src/dev/
+!/ntcore/src/dev/native/
+!/wpigui/src/dev/native/
+!/wpiutil/src/dev/native/
+
+# Resources only the Java tests read.
+/apriltag/src/test/resources/
+/commandsv2/src/test/resources/
+/fields/src/test/resources/
+
+# GradleRIO vendordep descriptors.
+/apriltag/AprilTag.json
+/cameraserver/CameraServer.json
+/commandsv2/CommandsV2.json
+/romiVendordep/RomiVendordep.json
+/xrpVendordep/XRPVendordep.json
+
+# Java-only generators. Mixed generators stay; their Java output is pruned.
+/wpimath/generate_numbers.py
+/wpimath/generate_quickbuf.py
+/wpimath/generate_wpimath.py
+
+# --- SystemCore robot target (#13) -------------------------------------------
+
+/hal/src/main/native/systemcore/
+/hal/src/main/native/cpp/mrclib/
+/simulation/halsim_ds_socket/
+
+# Iota amendment: the Iota HAL backend reuses these.
+!/hal/src/main/native/systemcore/Threads.cpp
+!/hal/src/main/native/systemcore/Notifier.cpp
+!/hal/src/main/native/systemcore/mockdata/
+
+# --- Repo-wide cleanup (last, so it wins inside re-included dirs) -----------
+
+# Bazel.
+*.bazel
+*.bzl
+/MODULE.bazel.lock
+/.bazel*
+/maven_install.json
+/tools/bazel.bat
+
+# Gradle.
+*.gradle
+/gradle/
+/gradlew
+/gradlew.bat
+/gradle.properties
+/buildSrc/
+
+# macOS bundle plists CMake never reads (it uses its own .plist.in).
+Info.plist
+
+# Java and JNI (#3). mrcal_java/ is C++ and isn't a dir named java/.
+**/java/
+**/native/cpp/jni/
+/wpiutil/src/main/native/include/wpi/util/jni_util.hpp
+/wpiutil/src/test/native/cpp/JniUtilTest.cpp
+
+# RobotPy bindings.
+**/src/main/python/
+**/src/test/python/
+
+# --- Fork-owned tooling is never removed -------------------------------------
+!/.fork/

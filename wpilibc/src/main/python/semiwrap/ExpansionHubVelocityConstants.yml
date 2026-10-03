@@ -1,5 +1,0 @@
-classes:
-  wpi::ExpansionHubVelocityConstants:
-    methods:
-      SetPID:
-      SetFF:

@@ -1,5 +1,0 @@
-strip_prefixes:
-- HALSIM_
-
-functions:
-  HALSIM_ResetAllSimData:

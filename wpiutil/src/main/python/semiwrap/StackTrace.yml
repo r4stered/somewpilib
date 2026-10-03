@@ -1,5 +1,0 @@
-functions:
-  GetStackTrace:
-  GetStackTraceDefault:
-  SetGetStackTraceImpl:
-    ignore: true

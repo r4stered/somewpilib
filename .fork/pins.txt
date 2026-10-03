@@ -1,0 +1,11 @@
+# The pin table: where the fork fetches a stock library at a different tag
+# from upstream's (#12). Read by .fork/cmake/stock.cmake.
+#
+# One entry per line:
+#   <lib> <tag> <upstream tag it overrides>
+#
+# <lib> is the upstream_utils/<lib>.py name. The third field is the `tag =`
+# value in that script when the entry was written. Once upstream's tag changes,
+# the entry is stale: delete it if upstream caught up, or update both tags.
+# The sync is to fail on a stale entry (#47); nothing checks it yet.
+# -DWPILIB_DEP_<LIB>_GIT_TAG=... overrides an entry for one build.

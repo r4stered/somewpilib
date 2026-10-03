@@ -1,0 +1,75 @@
+name: Dependency cache
+description: >-
+  Restores or saves the dependency provider's download and prefix dirs as one
+  tarball in the R2 bucket, under deps/<os>-<arch>-<compiler>-<hash>. See
+  .fork/ci/README.md.
+
+inputs:
+  mode:
+    description: "`restore` (before configure) or `save` (after the build)."
+    required: true
+  compiler:
+    description: The row's compiler, as it appears in the key (e.g. gcc-15).
+    required: true
+  configure-args:
+    description: >-
+      The configure command's extra arguments. Only the WPILIB_DEP_* ones
+      enter the key.
+    default: ""
+  deps-dir:
+    description: The configured WPILIB_DEPS_DIR.
+    default: build-cmake/_wpilib_deps
+  write:
+    description: >-
+      Whether `save` may upload. Only main pushes and the sync workflow pass
+      true; everything else only reads.
+    default: "false"
+  bucket:
+    description: The R2 bucket (vars.R2_BUCKET).
+    required: true
+  endpoint:
+    description: The R2 S3 endpoint (vars.R2_ENDPOINT).
+    required: true
+  access-key-id:
+    description: >-
+      secrets.R2_ACCESS_KEY_ID. When it is empty (a PR from a fork of the
+      fork), the action does nothing and the build fetches from source.
+    default: ""
+  secret-access-key:
+    description: secrets.R2_SECRET_ACCESS_KEY.
+    default: ""
+
+outputs:
+  key:
+    description: The cache key.
+    value: ${{ steps.run.outputs.key }}
+  hit:
+    description: Whether restore found the key. Empty on save or skip.
+    value: ${{ steps.run.outputs.hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Skip without R2 credentials
+      if: inputs.access-key-id == ''
+      shell: bash
+      run: echo "::notice title=dep cache::No R2 credentials; ${{ inputs.mode }} skipped."
+
+    - id: run
+      if: inputs.access-key-id != ''
+      shell: bash
+      env:
+        R2_BUCKET: ${{ inputs.bucket }}
+        R2_ENDPOINT: ${{ inputs.endpoint }}
+        AWS_ACCESS_KEY_ID: ${{ inputs.access-key-id }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.secret-access-key }}
+        CONFIGURE_ARGS: ${{ inputs.configure-args }}
+      run: >-
+        "$(command -v python3 || command -v python)"
+        .fork/ci/dep_cache.py ${{ inputs.mode }}
+        --deps-dir "${{ inputs.deps-dir }}"
+        --os "${{ runner.os }}"
+        --arch "${{ runner.arch }}"
+        --compiler "${{ inputs.compiler }}"
+        --configure-args="$CONFIGURE_ARGS"
+        ${{ inputs.write == 'true' && '--write' || '' }}

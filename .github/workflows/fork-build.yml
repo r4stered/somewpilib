@@ -1,0 +1,167 @@
+name: Fork build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Each row pins its image and that image's preinstalled default
+          # compiler major. Bump the image and the majors together, in one
+          # deliberate change (#55).
+          - name: Linux x64 GCC
+            os: ubuntu-26.04
+            cc: gcc-15
+            cxx: g++-15
+            build-type: Release
+            # Upstream's ctest exclusions, carried as-is:
+            #   CameraCalibrationTest Typical  inexplicably crashes (Linux, macOS)
+            #   UnitTest                        segfaults on exit occasionally (Windows)
+            ctest-exclude: "CameraCalibrationTest Typical"
+
+    name: "Build - ${{ matrix.name }} ${{ matrix.build-type }}"
+    runs-on: ${{ matrix.os }}
+    env:
+      # Expanded unquoted in bash, so no quoting. Any WPILIB_DEP_* argument and
+      # the build type here also key the dep cache.
+      CONFIGURE_ARGS: >-
+        -DCMAKE_BUILD_TYPE=${{ matrix.build-type }}
+        -DCMAKE_C_COMPILER=${{ matrix.cc }}
+        -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+        -DWPILIB_WITH_EXAMPLES=ON
+        -DWPILIB_WITH_TESTS=ON
+      # The R2 cache (.fork/ci/README.md). Only main pushes write; everything
+      # else reads. Without the secret (PRs from forks of the fork), sccache and
+      # the dep cache are skipped and the build runs uncached.
+      CACHE_WRITE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      SCCACHE_BUCKET: ${{ vars.R2_BUCKET }}
+      SCCACHE_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+      SCCACHE_REGION: auto
+      SCCACHE_S3_KEY_PREFIX: sccache/
+      SCCACHE_S3_RW_MODE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'READ_WRITE' || 'READ_ONLY' }}
+      # An unreachable bucket falls back to plain compiles instead of failing.
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Tags are needed for version stamping.
+          fetch-depth: 0
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: .fork/ci/install-linux-deps.sh
+
+      - name: Start avahi-daemon (Linux)
+        if: runner.os == 'Linux'
+        run: sudo systemctl start avahi-daemon
+
+      - name: Install CMake
+        uses: lukka/get-cmake@v4.4.0
+        with:
+          cmakeVersion: latest
+
+      - name: Run the fork's own tests
+        # They drive .fork/cmake with cmake, so they come after it is installed.
+        run: python3 -m unittest discover -s .fork/tests
+
+      - name: Install sccache
+        if: env.R2_ACCESS_KEY_ID != ''
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Use sccache as the compiler launcher
+        if: env.R2_ACCESS_KEY_ID != ''
+        run: |
+          echo "CMAKE_C_COMPILER_LAUNCHER=sccache" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=sccache" >> "$GITHUB_ENV"
+
+      - name: Restore the dep cache
+        uses: ./.fork/ci/dep-cache
+        with:
+          mode: restore
+          compiler: ${{ matrix.cc }}
+          configure-args: ${{ env.CONFIGURE_ARGS }}
+          bucket: ${{ vars.R2_BUCKET }}
+          endpoint: ${{ vars.R2_ENDPOINT }}
+          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
+      - name: Configure
+        shell: bash
+        run: cmake --preset default $CONFIGURE_ARGS
+
+      - name: Build
+        run: cmake --build build-cmake --parallel
+
+      - name: Save the dep cache
+        uses: ./.fork/ci/dep-cache
+        with:
+          mode: save
+          compiler: ${{ matrix.cc }}
+          configure-args: ${{ env.CONFIGURE_ARGS }}
+          write: ${{ env.CACHE_WRITE }}
+          bucket: ${{ vars.R2_BUCKET }}
+          endpoint: ${{ vars.R2_ENDPOINT }}
+          access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+
+      - name: Check the version stamp
+        run: |
+          # Every WPILibVersion.cpp carries a real version, not 0.0.0-unknown (#10).
+          files=$(find build-cmake -name WPILibVersion.cpp)
+          test -n "$files"
+          for f in $files; do
+            grep -H 'return' "$f"
+            grep -Eq 'return "[1-9][0-9]*\.[0-9]+\.[0-9]+[^"]*"' "$f"
+          done
+
+      - name: Test
+        run: ctest --test-dir build-cmake --output-on-failure -E '${{ matrix.ctest-exclude }}'
+
+      - name: Install
+        run: cmake --install build-cmake --prefix install
+
+      - name: Check the package version file
+        run: grep 'set(PACKAGE_VERSION "[1-9]' install/share/wpilib/wpilib-config-version.cmake
+
+      - name: Check the installed configs find their dependencies
+        run: |
+          # Configure only: the installed WPILib configs must import every
+          # library the provider built from the install prefix itself, not from
+          # the system (#32, #33). #42 builds a real consumer.
+          mkdir -p "$RUNNER_TEMP/probe"
+          cat > "$RUNNER_TEMP/probe/CMakeLists.txt" <<'EOF'
+          cmake_minimum_required(VERSION 4.4)
+          project(probe CXX)
+
+          # wpiutil's config finds double-conversion, cameraserver's OpenCV.
+          find_package(wpiutil REQUIRED)
+          find_package(cameraserver REQUIRED)
+
+          foreach(target double-conversion::double-conversion opencv_imgcodecs)
+              if(NOT TARGET ${target})
+                  message(FATAL_ERROR "the installed configs didn't import ${target}")
+              endif()
+          endforeach()
+
+          foreach(package double-conversion OpenCV)
+              cmake_path(IS_PREFIX CMAKE_PREFIX_PATH "${${package}_DIR}" in_prefix)
+              if(NOT in_prefix)
+                  message(FATAL_ERROR "${package} came from ${${package}_DIR}")
+              endif()
+          endforeach()
+          EOF
+          cmake -S "$RUNNER_TEMP/probe" -B "$RUNNER_TEMP/probe/build" \
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+            -DCMAKE_PREFIX_PATH="$PWD/install"

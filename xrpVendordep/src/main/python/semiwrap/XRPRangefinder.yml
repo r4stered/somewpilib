@@ -1,4 +1,0 @@
-classes:
-  wpi::xrp::XRPRangefinder:
-    methods:
-      GetDistance:
