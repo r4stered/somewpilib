@@ -69,7 +69,9 @@ The bucket has one lifecycle rule set. It is managed by `cloudflare_r2_bucket_li
 - objects under `sccache/` and `deps/` are deleted 30 days after upload;
 - incomplete multipart uploads are aborted after 7 days.
 
-R2 ages objects from their upload, not their last read. Even a hot `deps/` object therefore expires after 30 days, and the next `main` run rebuilds and re-uploads it. That is the only eviction there is. Nothing caps the bucket's size, and nothing needs to while it stays within a few GB. R2's first 10 GB-month is free, after that it's about $0.015 per GB-month, and downloads are free.
+R2 ages objects from their upload, not their last read. Even a hot `deps/` object therefore expires after 30 days, and the next `main` run rebuilds and re-uploads it. That is the only eviction there is. Nothing caps the bucket's size, and nothing needs to while it stays within a few GB.
+
+OpenCV sets the scale of a `deps/` object: its checkout is about 0.5 GB, two thirds of which is a `.git` dir nothing reads after the fetch. So budget a few hundred MB per key, and remember that there is one key per row per change to any `KEY_INPUTS` file. R2's first 10 GB-month is free, after that it's about $0.015 per GB-month, and downloads are free.
 
 ### Checking it
 

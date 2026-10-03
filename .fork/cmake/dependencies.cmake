@@ -6,9 +6,11 @@
 # fork's one-line modify surface). A consumer using the subdirectory route sets
 # it themselves, since their project() runs before WPILib's CMakeLists.txt does.
 #
-# For now it answers no find_package call: each falls through to CMake's
-# built-in search. The stock libraries upstream used to vendor are wired in by
-# the recipes in deps/ instead (stock.cmake, README.md).
+# A recipe in deps/ answers find_package(<Package>) by defining a macro named
+# _wpilib_provide_<Package>; anything else falls through to CMake's built-in
+# search. The stock libraries upstream used to vendor need no answer: upstream
+# never looked for them, so their recipes wire themselves in instead
+# (stock.cmake, README.md).
 
 include_guard(GLOBAL)
 
@@ -32,9 +34,13 @@ set(WPILIB_DEPS_DIR
 )
 
 # A macro rather than a function, so recipes can set result variables (such as
-# OpenCV_INCLUDE_DIRS) in the scope of the find_package call.
+# OpenCV_INCLUDE_DIRS) in the scope of the find_package call. A recipe gets the
+# find_package arguments after the package name, and answers by setting
+# <package_name>_FOUND; leaving it unset hands the call back to find_package.
 macro(wpilib_provide_dependency method package_name)
-    # Leaving <package_name>_FOUND unset hands the call back to find_package.
+    if(COMMAND "_wpilib_provide_${package_name}")
+        cmake_language(CALL "_wpilib_provide_${package_name}" ${ARGN})
+    endif()
 endmacro()
 
 cmake_language(
@@ -45,8 +51,9 @@ cmake_language(
 include("${CMAKE_CURRENT_LIST_DIR}/compile-workarounds.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/version.cmake")
 
-# Stock libraries (#12). No carried file calls find_package for these, so the
-# provider doesn't answer them: each recipe defers its own wiring until
+# The recipes, one per dependency (#5, #12). Each either defines the
+# _wpilib_provide_<Package> macro the dispatch above looks for, or, for a
+# library upstream vendored and never looked for, defers its own wiring until
 # upstream's targets exist.
 include("${CMAKE_CURRENT_LIST_DIR}/stock.cmake")
 file(GLOB _wpilib_recipes "${CMAKE_CURRENT_LIST_DIR}/deps/*.cmake")

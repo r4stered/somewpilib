@@ -18,12 +18,41 @@ cmake_policy(PUSH)
 cmake_policy(VERSION 3.30...4.4)
 
 # Sets <tag_var> to the git tag to fetch <lib> at, and <source_var> to where it
-# came from. Last one wins:
-#   1. the `tag = "..."` line in the carried upstream_utils/<lib>.py;
-#   2. the lib's entry in the pin table, .fork/pins.txt;
-#   3. -DWPILIB_DEP_<LIB>_GIT_TAG=..., where <LIB> is <lib> upper-cased with
+# came from.
+#
+#   wpilib_stock_tag(<lib> <tag_var> <source_var> [DEFAULT <tag>])
+#
+# Last one wins:
+#   1. the `tag = "..."` line in the carried upstream_utils/<lib>.py, then the
+#      lib's entry in the pin table, .fork/pins.txt -- or, with a non-empty
+#      DEFAULT, <tag> instead of both. A dependency upstream doesn't vendor has
+#      no upstream_utils script to read and no upstream tag for a pin entry to
+#      override, so its recipe owns the default. An empty DEFAULT is no
+#      default, so a caller can pass one through unconditionally;
+#   2. -DWPILIB_DEP_<LIB>_GIT_TAG=..., where <LIB> is <lib> upper-cased with
 #      each - turned into _.
 function(wpilib_stock_tag lib tag_var source_var)
+    cmake_parse_arguments(PARSE_ARGV 3 arg "" "DEFAULT" "")
+    if(arg_DEFAULT)
+        set(tag "${arg_DEFAULT}")
+        set(source ".fork/cmake/deps/${lib}.cmake")
+    else()
+        _wpilib_stock_upstream_tag(${lib} tag source)
+    endif()
+
+    _wpilib_stock_knob(${lib} GIT_TAG knob)
+    if(NOT "${${knob}}" STREQUAL "")
+        set(tag "${${knob}}")
+        set(source "-D${knob}")
+    endif()
+
+    set(${tag_var} "${tag}" PARENT_SCOPE)
+    set(${source_var} "${source}" PARENT_SCOPE)
+endfunction()
+
+# Sets <tag_var> and <source_var> from upstream's own pin, upstream_utils/<lib>.py,
+# and then from the fork's pin table over it.
+function(_wpilib_stock_upstream_tag lib tag_var source_var)
     get_filename_component(root "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../.." ABSOLUTE)
 
     set(script "upstream_utils/${lib}.py")
@@ -79,20 +108,14 @@ function(wpilib_stock_tag lib tag_var source_var)
         endforeach()
     endif()
 
-    _wpilib_stock_knob(${lib} knob)
-    if(NOT "${${knob}}" STREQUAL "")
-        set(tag "${${knob}}")
-        set(source "-D${knob}")
-    endif()
-
     set(${tag_var} "${tag}" PARENT_SCOPE)
     set(${source_var} "${source}" PARENT_SCOPE)
 endfunction()
 
-# Sets <knob_var> to the name of <lib>'s tag override, WPILIB_DEP_<LIB>_GIT_TAG.
-function(_wpilib_stock_knob lib knob_var)
+# Sets <knob_var> to the name of one of <lib>'s knobs, WPILIB_DEP_<LIB>_<suffix>.
+function(_wpilib_stock_knob lib suffix knob_var)
     string(TOUPPER "${lib}" uc)
-    string(REPLACE "-" "_" knob "WPILIB_DEP_${uc}_GIT_TAG")
+    string(REPLACE "-" "_" knob "WPILIB_DEP_${uc}_${suffix}")
     set(${knob_var} "${knob}" PARENT_SCOPE)
 endfunction()
 
@@ -124,17 +147,18 @@ function(wpilib_stock_patches lib patches_var digest_var)
 endfunction()
 
 # Fetches <lib> stock, patches it, builds it and installs it into
-# ${WPILIB_DEPS_DIR}/prefix/<lib> at configure time, then imports it with
-# find_package(<package> CONFIG) as GLOBAL targets and installs that prefix
-# with WPILib. Sets <lib>_PREFIX to the prefix.
+# ${WPILIB_DEPS_DIR}/prefix/<lib> at configure time, adds an install rule that
+# copies that prefix into WPILib's own, and sets <prefix_var> to it.
 #
-#   wpilib_stock_add(<lib> GIT_REPOSITORY <url> PACKAGE <package>
-#                    [CMAKE_ARGS <arg>...])
+#   wpilib_stock_build(<lib> <prefix_var> GIT_REPOSITORY <url>
+#                       [DEFAULT_TAG <tag>] [CMAKE_ARGS <arg>...])
 #
-# The tag comes from wpilib_stock_tag() and the patches from
-# wpilib_stock_patches(). It builds static and position-independent, the way
-# upstream compiled its vendored copy into WPILib's own libraries, with WPILib's
-# compilers and build type. CMAKE_ARGS adds the library's own options. Under a
+# The tag comes from wpilib_stock_tag(), with DEFAULT_TAG passed on as its
+# DEFAULT, and the patches from wpilib_stock_patches(). It builds static and
+# position-independent, the way upstream compiled its vendored copy into
+# WPILib's own libraries, with WPILib's compilers and build type. CMAKE_ARGS
+# adds the library's own options, and -DWPILIB_DEP_<LIB>_CMAKE_ARGS=... is
+# appended after them, so a build can extend or override any of them. Under a
 # multi-config generator it builds only CMAKE_BUILD_TYPE, or Release; the
 # Windows rows (#43) have to settle how a Debug build gets a matching runtime.
 #
@@ -144,22 +168,30 @@ endfunction()
 # build/<lib>, isn't cached. -DFETCHCONTENT_SOURCE_DIR_<LIB>=<dir>
 # (FetchContent's own override, <LIB> upper-cased) builds a local checkout
 # instead, unpatched and on every configure.
-function(wpilib_stock_add lib)
-    cmake_parse_arguments(PARSE_ARGV 1 arg "" "GIT_REPOSITORY;PACKAGE" "CMAKE_ARGS")
-    if(NOT arg_GIT_REPOSITORY OR NOT arg_PACKAGE)
-        message(
-            FATAL_ERROR
-            "wpilib_stock_add(${lib}): GIT_REPOSITORY and PACKAGE are required."
-        )
+function(wpilib_stock_build lib prefix_var)
+    cmake_parse_arguments(
+        PARSE_ARGV 2 arg
+        ""
+        "GIT_REPOSITORY;DEFAULT_TAG"
+        "CMAKE_ARGS"
+    )
+    if(NOT arg_GIT_REPOSITORY)
+        message(FATAL_ERROR "wpilib_stock_build(${lib}): GIT_REPOSITORY is required.")
     endif()
     string(TOUPPER "${lib}" uc)
     set(local_checkout "${FETCHCONTENT_SOURCE_DIR_${uc}}")
 
-    _wpilib_stock_knob(${lib} knob)
-    set(${knob}
+    _wpilib_stock_knob(${lib} GIT_TAG tag_knob)
+    set(${tag_knob}
         ""
         CACHE STRING
         "Git tag to fetch ${lib} at, overriding upstream_utils and the pin table."
+    )
+    _wpilib_stock_knob(${lib} CMAKE_ARGS args_knob)
+    set(${args_knob}
+        ""
+        CACHE STRING
+        "Extra CMake arguments for ${lib}'s build, appended to the recipe's."
     )
 
     if(local_checkout)
@@ -167,7 +199,7 @@ function(wpilib_stock_add lib)
         set(fetched "${src}, unpatched, from FETCHCONTENT_SOURCE_DIR_${uc}")
         message(STATUS "${lib}: ${fetched}")
     else()
-        wpilib_stock_tag(${lib} tag source)
+        wpilib_stock_tag(${lib} tag source DEFAULT "${arg_DEFAULT_TAG}")
         wpilib_stock_patches(${lib} patches digest)
         set(src "${WPILIB_DEPS_DIR}/download/${lib}")
         set(fetched "${arg_GIT_REPOSITORY} ${tag} ${digest}")
@@ -209,7 +241,7 @@ function(wpilib_stock_add lib)
         CMAKE_OSX_ARCHITECTURES
         CMAKE_OSX_DEPLOYMENT_TARGET
     )
-    list(APPEND configure_args ${arg_CMAKE_ARGS})
+    list(APPEND configure_args ${arg_CMAKE_ARGS} ${${args_knob}})
     set(prefix "${WPILIB_DEPS_DIR}/prefix/${lib}")
     # The mechanism is in the stamp too, as it is in CI's dep-cache key.
     file(SHA256 "${CMAKE_CURRENT_FUNCTION_LIST_FILE}" mechanism)
@@ -242,8 +274,45 @@ function(wpilib_stock_add lib)
         file(WRITE "${prefix}.stamp" "${built}\n")
     endif()
 
-    find_package(${arg_PACKAGE} CONFIG REQUIRED GLOBAL PATHS "${prefix}" NO_DEFAULT_PATH)
+    # Alongside WPILib, because an installed WPILib config names its targets.
+    # The rule belongs to whichever directory scope asked for the build first,
+    # which doesn't matter: DESTINATION is the install prefix either way, and
+    # every directory's install script runs.
     install(DIRECTORY "${prefix}/" DESTINATION . USE_SOURCE_PERMISSIONS)
+    set(${prefix_var} "${prefix}" PARENT_SCOPE)
+endfunction()
+
+# Builds <lib> with wpilib_stock_build(), then imports it with
+# find_package(<package> CONFIG) as GLOBAL targets. Sets <lib>_PREFIX to the
+# prefix. This is what a recipe for a library upstream vendored calls: no
+# carried file looks for such a library, so the provider has no find_package
+# call to answer and the recipe does the import itself.
+#
+#   wpilib_stock_add(<lib> GIT_REPOSITORY <url> PACKAGE <package>
+#                    [CMAKE_ARGS <arg>...])
+function(wpilib_stock_add lib)
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "GIT_REPOSITORY;PACKAGE" "CMAKE_ARGS")
+    if(NOT arg_GIT_REPOSITORY OR NOT arg_PACKAGE)
+        message(
+            FATAL_ERROR
+            "wpilib_stock_add(${lib}): GIT_REPOSITORY and PACKAGE are required."
+        )
+    endif()
+
+    wpilib_stock_build(${lib} prefix
+        GIT_REPOSITORY "${arg_GIT_REPOSITORY}"
+        CMAKE_ARGS ${arg_CMAKE_ARGS}
+    )
+    # BYPASS_PROVIDER: the provider's own recipes must never answer each other.
+    find_package(
+        ${arg_PACKAGE}
+        CONFIG
+        REQUIRED
+        GLOBAL
+        BYPASS_PROVIDER
+        PATHS "${prefix}"
+        NO_DEFAULT_PATH
+    )
     set(${lib}_PREFIX "${prefix}" PARENT_SCOPE)
 endfunction()
 

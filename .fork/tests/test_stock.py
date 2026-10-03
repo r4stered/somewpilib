@@ -5,31 +5,19 @@ Each test copies stock.cmake into a throwaway fork tree and drives it with
 fetch and the wiring are covered by the fork CI build.
 """
 
-import pathlib
-import shutil
 import subprocess
-import tempfile
 import textwrap
 import unittest
 
-STOCK = pathlib.Path(__file__).resolve().parents[1] / "cmake/stock.cmake"
+from forktree import ForkTree
 
 
-class Tree:
+class Tree(ForkTree):
     """A throwaway fork root holding stock.cmake and whatever a test writes."""
 
     def __init__(self, testcase):
-        tmp = tempfile.TemporaryDirectory()
-        testcase.addCleanup(tmp.cleanup)
-        self.root = pathlib.Path(tmp.name)
-        (self.root / ".fork/cmake").mkdir(parents=True)
-        shutil.copy(STOCK, self.root / ".fork/cmake/stock.cmake")
-
-    def write(self, path, text):
-        p = self.root / path
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(text, encoding="utf-8")
-        return p
+        super().__init__(testcase)
+        self.copy("stock.cmake")
 
     def run(self, script, *defines):
         """Runs script after including stock.cmake. Returns (ok, output)."""
@@ -103,6 +91,20 @@ class TagTest(unittest.TestCase):
         self.assertTrue(ok, out)
         self.assertIn("TAG=v3.4.0\n", out)
 
+    def test_an_empty_default_is_no_default(self):
+        # wpilib_stock_build() passes DEFAULT through unconditionally, so a
+        # vendored library arrives here with an empty one.
+        ok, out = self.tree.run(
+            """
+            wpilib_stock_tag(double-conversion tag source DEFAULT "")
+            message("TAG=${tag}")
+            message("SOURCE=${source}")
+            """
+        )
+        self.assertTrue(ok, out)
+        self.assertIn("TAG=v3.4.0\n", out)
+        self.assertIn("SOURCE=upstream_utils/double-conversion.py", out)
+
     def test_fails_without_an_upstream_utils_script(self):
         (self.tree.root / "upstream_utils/double-conversion.py").unlink()
         ok, out = self.tree.run(TAG)
@@ -132,6 +134,45 @@ class TagTest(unittest.TestCase):
         ok, out = self.tree.run(TAG)
         self.assertFalse(ok)
         self.assertIn("more than once", out)
+
+
+DEFAULT_TAG = """\
+    wpilib_stock_tag(opencv tag source DEFAULT 4.13.0)
+    message("TAG=${tag}")
+    message("SOURCE=${source}")
+"""
+
+
+class DefaultTagTest(unittest.TestCase):
+    """A dependency upstream doesn't vendor has no upstream_utils script and no
+    upstream tag, so its recipe passes the default itself."""
+
+    def setUp(self):
+        self.tree = Tree(self)
+
+    def test_the_default_comes_from_the_recipe(self):
+        ok, out = self.tree.run(DEFAULT_TAG)
+        self.assertTrue(ok, out)
+        self.assertIn("TAG=4.13.0\n", out)
+        self.assertIn("SOURCE=.fork/cmake/deps/opencv.cmake", out)
+
+    def test_the_pin_table_is_not_consulted(self):
+        # A pin entry records the upstream tag it overrides, and there is none.
+        self.tree.write(".fork/pins.txt", "opencv 4.12.0 4.13.0\n")
+        ok, out = self.tree.run(DEFAULT_TAG)
+        self.assertTrue(ok, out)
+        self.assertIn("TAG=4.13.0\n", out)
+
+    def test_the_git_tag_knob_overrides_it(self):
+        ok, out = self.tree.run(DEFAULT_TAG, "WPILIB_DEP_OPENCV_GIT_TAG=4.12.0")
+        self.assertTrue(ok, out)
+        self.assertIn("TAG=4.12.0\n", out)
+        self.assertIn("SOURCE=-DWPILIB_DEP_OPENCV_GIT_TAG", out)
+
+    def test_an_empty_knob_is_unset(self):
+        ok, out = self.tree.run(DEFAULT_TAG, "WPILIB_DEP_OPENCV_GIT_TAG=")
+        self.assertTrue(ok, out)
+        self.assertIn("TAG=4.13.0\n", out)
 
 
 PATCHES = """\

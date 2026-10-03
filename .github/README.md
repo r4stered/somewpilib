@@ -17,7 +17,9 @@ cmake --preset default -DCMAKE_BUILD_TYPE=Release
 cmake --build build-cmake
 ```
 
-Dependencies are provided by the fork's **dependency provider**, [`.fork/cmake/dependencies.cmake`](../.fork/cmake/dependencies.cmake). It answers upstream's `find_package` calls without changing them. For now it passes every call through, so dependencies such as OpenCV still have to be installed on the system.
+Dependencies are provided by the fork's **dependency provider**, [`.fork/cmake/dependencies.cmake`](../.fork/cmake/dependencies.cmake). It answers upstream's `find_package` calls without changing them, and builds each dependency from source at configure time, into the build tree. Nothing comes from a package manager, so the first configure is slow and needs the network; after that a dependency is rebuilt only when its recipe or the compiler changes.
+
+OpenCV is built this way too, and is installed alongside WPILib, because the installed `cscore` and `cameraserver` packages depend on it publicly. Each dependency has knobs for a different tag (`WPILIB_DEP_<LIB>_GIT_TAG`), extra build options (`WPILIB_DEP_<LIB>_CMAKE_ARGS`) and, for an external library, an installed copy instead (`WPILIB_DEP_<LIB>_USE_SYSTEM`); see [`.fork/cmake/README.md`](../.fork/cmake/README.md).
 
 ## Using it from your own project
 
